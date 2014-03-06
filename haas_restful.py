@@ -1,6 +1,5 @@
-
 from flask import Flask, jsonify, abort, make_response, request
-import haas.control
+import haas.control as control
 import haas.model
 import haas.config
 from flask.ext.httpauth import HTTPBasicAuth
@@ -86,6 +85,15 @@ def remove_node_from_group(group_name,node_id):
     return get_group_nodes(group_name)
 
 
+"""
+All the infrastructure config use POST,
+get parameters from the request, and call the corresponding
+function in haas.control
+There is no need for type conversion.
+Incorrect type should cause an error.
+Returns success or exceptions.
+"""
+
 
 @app.route('/groups', methods = ['POST'])
 def create_group():
@@ -108,41 +116,29 @@ def destroy_group(group_name):
     return get_groups()
 
 
-'''
-new interface begins
-'''
-
 @app.route('/nodes',methods = ['POST'])
 def create_node():
-    node_id = request.json['node_id']
-    haas.control.create_node(node_id)
-    return jsonify({'node_id':node_id}),201
+    parameters = map((lambda x: request.json[x]),('node_id'))
+    control.create_node(*parameters)
+    return jsonify(),201
     
 @app.route('/nics',methods=['POST'])
 def create_nic():
-    nic = {}
-    nic["nic_id"] = request.json['nic_id']
-    nic["mac_addr"] = request.json['mac_addr']
-    nic["name"] = request.json['name']
-    haas.control.create_nic(nic["nic_id"],nic["mac_addr"],nic["name"])
-    return jsonify(nic),201
+    parameters = map((lambda x: request.json[x]),('nic_id','mac_addr','name'))
+    control.create_nic(*parameters)
+    return jsonify(),201
 
 @app.route('/switches',methods=['POST'])
 def create_switch():
-    switch = {}
-    switch["switch_id"] = request.json['switch_id']
-    switch['script'] = request.json['script']
-    haas.control.create_switch(switch['switch_id'],switch['script'])
-    return jsonify(switch),201
+    parameters = map((lambda x: request.json[x]),('switch_id','script'))
+    control.create_switch(*parameters)
+    return jsonify(),201
 
 @app.route('/ports',methods=['POST'])
 def create_port():
-    port = {}
-    port["port_id"] = request.json['port_id']
-    port['switch_id'] = request.json['switch_id']
-    port['port_no'] = request.json['port_no']
-    haas.control.create_port(port['port_id'],port['switch_id'],port['port_no'])
-    return jsonify(port),201
+    parameters = map((lambda x: request.json[x]),('port_id','switch_id','port_no'))
+    control.create_port(*parameters)
+    return jsonify(),201
 
 if __name__ == '__main__':
     app.run(debug = True)
