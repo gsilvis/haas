@@ -150,6 +150,7 @@ def remove_node_from_group(node_id,group_name):
 
 def create_group(group_name):
     group=Group(group_name)
+    current_user = 'admin'
     user = get_entity_by_cond(User,'user_name=="%s"'%current_user)
     group.owner = user
     session.add(group)

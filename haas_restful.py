@@ -7,51 +7,6 @@ auth = HTTPBasicAuth()
 
 app = Flask(__name__)
 
-
-class G():
-    pass
-g=G()
-
-@app.errorhandler(404)
-def not_found(error):
-    return make_response(jsonify({'error': 'Not found'}), 404)
-
-
-@auth.verify_password
-def verify_password(username, password):
-    g.username=username
-    return True
-
-
-@app.route('/groups', methods = ['GET'])
-@auth.login_required
-def get_groups():
-    print g.username
-    groups = []
-    for group in  haas.control.query_db(haas.model.Group):
-        print group
-        groups.append({
-                'group_name':group.group_name,
-                'vm_name':group.vm_name,
-                'network_id':group.network_id,
-                'deployed':group.deployed
-                })
-
-    return jsonify({'groups': groups} )
-
-
-@app.route('/groups/<group_name>', methods = ['GET'])
-def get_group(group_name):
-    group = haas.control.get_entity_by_cond(haas.model.Group,"group_name=='%s'"%group_name)
-
-    group_dict ={
-        'group_name': group.group_name,
-        'vm_name': group.vm_name,
-        'network_id': group.network_id,
-        'deployed': group.deployed,
-        }
-    return jsonify(group_dict)
-
 @app.route('/groups/<group_name>/nodes', methods = ['GET'])
 def get_group_nodes(group_name):
     group = haas.control.get_entity_by_cond(haas.model.Group,"group_name=='%s'"%group_name)
@@ -95,30 +50,23 @@ Returns success or exceptions.
 """
 
 
-@app.route('/groups', methods = ['POST'])
-def create_group():
-    if not request.json or not 'group_name' in request.json:
-        abort(400)
-    group = {
-        'group_name': request.json['group_name'],
-        'vm_name': request.json['vm_name'],
-        'network_id' : request.json['network_id'],
-        'deployed' : False
-    }
-    print group
-    haas.control.create_group(group['group_name'],group['vm_name'],group['network_id'])
-    groups.append(group)
-    return jsonify({ 'group':group}), 201
-
 @app.route('/groups/<group_name>', methods = ['DELETE'])
 def destroy_group(group_name):
-    haas.control.destroy_group(group_name)
-    return get_groups()
+    control.destroy_group(group_name)
+    return jsonify(),201
+    
+
+@app.route('/groups', methods = ['POST'])
+def create_group():
+    parameters = map((lambda x: request.json[x]),("group_name",))
+    print parameters
+    control.create_group(*parameters)
+    return jsonify(), 201
 
 
 @app.route('/nodes',methods = ['POST'])
 def create_node():
-    parameters = map((lambda x: request.json[x]),('node_id'))
+    parameters = map((lambda x: request.json[x]),('node_id',))
     control.create_node(*parameters)
     return jsonify(),201
     
