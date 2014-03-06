@@ -7,37 +7,6 @@ auth = HTTPBasicAuth()
 
 app = Flask(__name__)
 
-@app.route('/groups/<group_name>/nodes', methods = ['GET'])
-def get_group_nodes(group_name):
-    group = haas.control.get_entity_by_cond(haas.model.Group,"group_name=='%s'"%group_name)
-    nodes = []
-    print group
-    for node in group.nodes:
-        print node
-        nodes.append(node.node_id)
-    nodes_dict={"nodes":nodes}
-    return jsonify(nodes_dict)
-
-@app.route('/groups/<group_name>/nodes/add/<node_id>',methods = ['POST'])
-def add_node_to_group(group_name,node_id):
-    node_id = int(node_id)
-    group = haas.control.get_entity_by_cond(haas.model.Group,'group_name == "%s"'%group_name)
-    node = haas.control.get_entity_by_cond(haas.model.Node, 'node_id == %d'%node_id)
-    if not group or not node or node.available == False:
-        abort(404)
-    node.group = group
-    return get_group_nodes(group_name)
-
-@app.route('/groups/<group_name>/nodes/remove/<node_id>',methods = ['DELETE'])
-def remove_node_from_group(group_name,node_id):
-    node_id = int(node_id)
-    group = haas.control.get_entity_by_cond(haas.model.Group,'group_name == "%s"'%group_name)
-    node = haas.control.get_entity_by_cond(haas.model.Node, 'node_id == %d'%node_id)
-    if not group or not node:
-        abort(404)
-    node.group = None
-    node.available = True
-    return get_group_nodes(group_name)
 
 
 """
@@ -87,6 +56,22 @@ def create_port():
     parameters = map((lambda x: request.json[x]),('port_id','switch_id','port_no'))
     control.create_port(*parameters)
     return jsonify(),201
+
+"""
+wishlist
+add_node(node_id,group_name)
+connect_nic(nic_id,port_id)
+add_nic(nic_id,node_id)
+create_vlan(vlan_id)
+connect_vlan(vlan_id,group_name,nic_name)
+headnode_create()
+headnode_attach(vm_name,group_name)
+deploy_group(group_name)
+create_user(user_name,password)
+show_all()
+show_table(table_name)
+"""
+
 
 if __name__ == '__main__':
     app.run(debug = True)
