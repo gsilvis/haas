@@ -1,12 +1,16 @@
 
 from haas import control
 import re
+import requests
+import json
 
 # A list of tuples of the form `(matcher, func)`, where `func` is a
 # function to run when a command matching matcher is executed. Commands
 # are added via the command decorator
 commands = []
 
+rest_url = "http://localhost:5000"
+rest_headers = {'Content-type':'application/json'}
 
 # This is used by the exit command to tell the main loop when to stop.
 class _QuitException(Exception): pass
@@ -81,10 +85,14 @@ def create_group(group_name):
     """group create <group_name>"""
     control.create_group(group_name)
 
+
+#Try to do it via REST API
 @command('node create (\d+)')
 def create_node(node_id):
     """node create <node_id>"""
-    control.create_node(node_id)
+    node = {'node_id':int(node_id)}
+    requests.post(rest_url+"/node",data=json.dumps(node),headers=rest_headers)
+
 
 @command('node add (\d+) (\w+)')
 def add_node(node_id,group_name):
