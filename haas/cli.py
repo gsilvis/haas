@@ -1,4 +1,3 @@
-
 from haas import control
 import re
 import requests
@@ -83,10 +82,10 @@ def main_loop():
 @command('group create (\w+)')
 def create_group(group_name):
     """group create <group_name>"""
-    control.create_group(group_name)
+    group={'group_name':group_name}
+    requests.post(rest_url+"/group",data=json.dumps(group),headers=rest_headers)
 
 
-#Try to do it via REST API
 @command('node create (\d+)')
 def create_node(node_id):
     """node create <node_id>"""
@@ -102,13 +101,15 @@ def add_node(node_id,group_name):
 @command('nic create (\d+) (\w+) (\w+)')
 def create_nic(nic_id, mac_addr, name):
     """nic create <nic_id> <mac_addr> <name>"""
-    control.create_nic(int(nic_id), mac_addr, name)
+    nic = {'nic_id':int(nic_id),'ma_addr':mac_addr,'name':name}
+    requests.post(rest_url+"/nic",data=json.dumps(nic),headers=rest_headers)
 
 @command('nic connect (\d+) (\d+)')
 def connect_nic(nic_id, port_id):
     """nic connect <nic_id> <port_id>"""
-    control.connect_nic(int(nic_id), int(port_id))
-
+    connection = {'nic_id':int(nic_id),'port_id':int(port_id)}
+    requests.post(rest_url+"/connection",data=json.dumps(connection),headers=rest_headers)
+    
 @command('nic add (\d+) (\d+)')
 def add_nic(nic_id, node_id):
     """nic add <nic_id> <node_id>"""
