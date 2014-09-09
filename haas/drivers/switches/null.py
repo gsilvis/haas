@@ -12,19 +12,15 @@
 # express or implied.  See the License for the specific language
 # governing permissions and limitations under the License.
 
-"""A VLAN-based null switch driver.  Network IDs are allocated from a VLAN
-pool.  Applying the network state does nothing.
+"""A switch driver that doesn't do anything
 
-For unit testing purposes.
+See the documentation for the haas.drivers package for a description of this
+module's interface.
 """
 
-# We are a VLAN-based driver with simple allocation
-from haas.drivers.driver_tools.vlan import *
+from haas.dev_support import no_dry_run
 
-def apply_networking(net_map):
-    # The following code does nothing, except for check that the net_map is in
-    # fact a map that can be iterated over.  This is how it's used in the
-    # 'dell' plugin, and likely in most VLAN-based plugins.  This can help
-    # check for bugs in haas/api.py
+@no_dry_run
+def apply_networking(net_map, config):
     for port in net_map:
-        net = net_map[port]
+        network = net_map[port]
