@@ -54,3 +54,23 @@ def apply_networking(net_map):
             if sw == name:
                 submap[po] = net_map[net_entry]
         driver.apply_networking(submap, switch)
+
+def get_switch_vlans(vlan_list):
+    switches = json.loads(cfg.get('driver complex_vlan', 'switch'))
+    returnee = {}
+    for vlan in vlan_list:
+        returnee[vlan] = []
+    for switch in switches:
+        driver = importlib.import_module('haas.drivers.switches.' + switch['switch'])
+        submap = driver.get_switch_vlans(switch, vlan_list)
+        for vlan in submap:
+            for port in submap[vlan]:
+                returnee[vlan].append(switch['name'] + "::" + port)
+
+    # Remove the trunk port from the vlan_lists
+    trunk_ports = json.loads(cfg.get('driver complex_vlan', 'trunk_ports'))
+    for vlan in returnee:
+        for trunk_port in trunk_ports:
+            if trunk_port in returnee[vlan]:
+                returnee[vlan].remove(trunk_port)
+    return returnee
