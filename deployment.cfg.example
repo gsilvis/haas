@@ -3,6 +3,10 @@
 # ``deployment.cfg``, in the current working directory.  To get started, simply
 # copy this file, and modify as needed.
 
+# Note that, while this looks a lot like haas.cfg, it works slightly
+# differently---it has one or two extra options, and will ONLY work with the
+# simple_vlan driver.
+
 [general]
 # The driver to use for the network switch. The value must be the name of one
 # of the modules in haas.drivers:
@@ -15,10 +19,8 @@ trunk_nic = em3
 
 [driver simple_vlan]
 switch = {"switch": "dell", "ip": "192.168.0.1", "user": "foo", "pass": "bar"}
-
-[switch dell]
 # The port that the switch is trunking to the head node. Note that this is
-# currently set manually, but must be known for deployment testing.  Also note that this is a hack, because this section shouldn't even be here.
+# currently set manually, but must be known for deployment testing.
 trunk_port = gi1/0/4
 
 [vlan]

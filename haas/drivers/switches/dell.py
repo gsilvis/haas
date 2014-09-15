@@ -14,9 +14,6 @@
 
 """A switch driver for the Dell Powerconnect
 
-See the documentation for the haas.drivers package for a description of this
-module's interface.
-
 Currently the driver uses telnet to connect to the switch's console; in
 the long term we want to be using SNMP.
 """
@@ -95,3 +92,40 @@ def apply_networking(net_map, config):
     console.expect(main_prompt)
     console.sendline('exit')
     console.expect(pexpect.EOF)
+
+
+# This doesn't get @no_dry_run, because returning None here is a bad idea
+def get_switch_vlans(config, vlan_list):
+    # load the configuration:
+    switch_ip = config['ip']
+    switch_user = config['user']
+    switch_pass = config['pass']
+
+    # connect to the switch, and log in:
+    console = pexpect.spawn('telnet ' + switch_ip)
+    console.expect('User Name:')
+    console.sendline(switch_user)
+    console.expect('Password:')
+    console.sendline(switch_pass)
+
+    #Regex to handle different prompt at switch
+    #[\r\n]+ will handle any newline
+    #.+ will handle any character after newline
+    # this sequence terminates with #
+    console.expect(r'[\r\n]+.+#')
+    cmd_prompt = console.after
+    cmd_prompt = cmd_prompt.strip(' \r\n\t')
+
+    # get possible vlans from config
+    vlan_cfgs = {}
+    regex = re.compile(r'gi\d+\/\d+\/\d+-?\d?\d?')
+    for vlan in get_vlan_list():
+        console.sendline('show vlan tag %d' % vlan)
+        console.expect(cmd_prompt)
+        vlan_cfgs[vlan] = regex.findall(console.before)
+
+    # close session
+    console.sendline('exit')
+    console.expect(pexpect.EOF)
+
+    return vlan_cfgs
