@@ -20,6 +20,7 @@ driver = simple_vlan
 # How verbosely to log.  Log messages of the given severity or more will be
 # logged.  Options include: debug, info, warn/warning, error, critical/fatal.
 log_level = info
+auth = null
 
 [headnode]
 # The trunked network interface on the host. This is the nic that the VMs will

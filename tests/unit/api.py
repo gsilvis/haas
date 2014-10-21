@@ -473,7 +473,7 @@ class TestNodeConnectDetachNetwork:
 #        api.project_connect_node('anvil-nextgen', 'node-99')
         network_create_simple('hammernet', 'anvil-nextgen')
 
-        with pytest.raises(api.ProjectMismatchError):
+        with pytest.raises(api.NotFoundError):
             api.node_connect_network('node-99', '99-eth0', 'hammernet')
 
     @database_only
@@ -602,7 +602,7 @@ class TestNodeConnectDetachNetwork:
 #        network_create_simple('hammernet', 'anvil-nextgen')
 #        api.node_connect_network('node-99', '99-eth0', 'hammernet')
 
-        with pytest.raises(api.ProjectMismatchError):
+        with pytest.raises(api.NotFoundError):
             api.node_detach_network('node-99', '99-eth0')
 
 

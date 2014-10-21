@@ -23,6 +23,7 @@ import logging
 from haas import model
 from haas.config import cfg
 from moc.rest import APIError, rest_call
+from haas.auth import authorize
 
 
 class NotFoundError(APIError):
@@ -81,6 +82,8 @@ def user_create(user, password):
 
     If the user already exists, a DuplicateError will be raised.
     """
+    authorize(None)
+
     db = model.Session()
     _assert_absent(db, model.User, user)
     user = model.User(user, password)
@@ -94,6 +97,8 @@ def user_delete(user):
 
     If the user does not exist, a NotFoundError will be raised.
     """
+    authorize(None)
+
     db = model.Session()
     user = _must_find(db, model.User, user)
     db.delete(user)
@@ -110,6 +115,8 @@ def project_create(project):
 
     If the project already exists, a DuplicateError will be raised.
     """
+    authorize(None)
+
     db = model.Session()
     _assert_absent(db, model.Project, project)
     project = model.Project(project)
@@ -123,8 +130,11 @@ def project_delete(project):
 
     If the project does not exist, a NotFoundError will be raised.
     """
+    authorize(project)
+
     db = model.Session()
     project = _must_find(db, model.Project, project)
+
     if project.nodes:
         raise BlockedError("Project has nodes still")
     if project.networks_created:
@@ -152,6 +162,8 @@ def project_connect_node(project, node):
 
     If the node or project does not exist, a NotFoundError will be raised.
     """
+    authorize(project)
+
     db = model.Session()
     project = _must_find(db, model.Project, project)
     node = _must_find(db, model.Node, node)
@@ -165,6 +177,8 @@ def project_detach_node(project, node):
 
     If the node or project does not exist, a NotFoundError will be raised.
     """
+    authorize(project)
+
     db = model.Session()
     project = _must_find(db, model.Project, project)
     node = _must_find(db, model.Node, node)
@@ -187,12 +201,16 @@ def project_add_user(project, user):
 
     If the project or user does not exist, a NotFoundError will be raised.
     """
+    authorize(project)
+
     db = model.Session()
-    user = _must_find(db, model.User, user)
     project = _must_find(db, model.Project, project)
+    user = _must_find(db, model.User, user)
+
     if project in user.projects:
         raise DuplicateError('User %s is already in project %s',
                              (user.label, project.label))
+
     user.projects.append(project)
     db.commit()
 
@@ -203,12 +221,16 @@ def project_remove_user(project, user):
 
     If the project or user does not exist, a NotFoundError will be raised.
     """
+    authorize(project)
+
     db = model.Session()
-    user = _must_find(db, model.User, user)
     project = _must_find(db, model.Project, project)
+
+    user = _must_find(db, model.User, user)
     if project not in user.projects:
         raise NotFoundError("User %s is not in project %s",
                             (user.label, project.label))
+
     user.projects.remove(project)
     db.commit()
 
@@ -223,6 +245,8 @@ def node_register(node, ipmi_host, ipmi_user, ipmi_pass):
 
     If the node already exists, a DuplicateError will be raised.
     """
+    authorize(None)
+
     db = model.Session()
     _assert_absent(db, model.Node, node)
     node = model.Node(node, ipmi_host, ipmi_user, ipmi_pass)
@@ -234,6 +258,15 @@ def node_register(node, ipmi_host, ipmi_user, ipmi_pass):
 def node_power_cycle(node):
     db = model.Session()
     node = _must_find(db, model.Node, node)
+
+    # XXX: The semantics of this are a little odd.  Power-cycling a node in a
+    # project and power cycling a node not in a project are really very
+    # different actions.
+    if node.project:
+        authorize(node.project.label)
+    else:
+        authorize(None)
+
     if not node.power_cycle():
         raise ServerError('Could not power cycle node %s' % node.label)
 
@@ -244,6 +277,8 @@ def node_delete(node):
 
     If the node does not exist, a NotFoundError will be raised.
     """
+    authorize(None)
+
     db = model.Session()
     node = _must_find(db, model.Node, node)
     node.stop_console()
@@ -260,6 +295,8 @@ def node_register_nic(node, nic, macaddr):
 
     If there is already an nic with that name, a DuplicateError will be raised.
     """
+    authorize(None)
+
     db = model.Session()
     node = _must_find(db, model.Node, node)
     _assert_absent_n(db, node, model.Nic, nic)
@@ -274,6 +311,8 @@ def node_delete_nic(node, nic):
 
     If the nic does not exist, a NotFoundError will be raised.
     """
+    authorize(None)
+
     db = model.Session()
     nic = _must_find_n(db, _must_find(db, model.Node, node), model.Nic, nic)
     db.delete(nic)
@@ -290,18 +329,19 @@ def node_connect_network(node, nic, network):
     db = model.Session()
 
     node = _must_find(db, model.Node, node)
-    nic = _must_find_n(db, node, model.Nic, nic)
-    network = _must_find(db, model.Network, network)
 
     if not node.project:
-        raise ProjectMismatchError("Node not in project")
+        raise NotFoundError("Node not in project")
 
-    project = node.project
+    authorize(node.project.label)
+
+    nic = _must_find_n(db, node, model.Nic, nic)
+    network = _must_find(db, model.Network, network)
 
     if nic.current_action:
         raise BlockedError("A networking operation is already active on the nic.")
 
-    if (network.access is not None) and (network.access is not project):
+    if (network.access is not None) and (network.access is not node.project):
         raise ProjectMismatchError("Project does not have access to given network.")
 
     db.add(model.NetworkingAction(nic, network))
@@ -315,12 +355,13 @@ def node_detach_network(node, nic):
     """
     db = model.Session()
     node = _must_find(db, model.Node, node)
-    nic = _must_find_n(db, node, model.Nic, nic)
 
     if not node.project:
-        raise ProjectMismatchError("Node not in project")
+        raise NotFoundError("Node not in project")
 
-    project = nic.owner.project
+    authorize(node.project.label)
+
+    nic = _must_find_n(db, node, model.Nic, nic)
 
     if nic.current_action:
         raise BlockedError("A networking operation is already active on the nic.")
@@ -345,6 +386,7 @@ def headnode_create(headnode, project, base_img):
     If the project does not exist, a NotFoundError will be raised.
 
     """
+    authorize(project)
 
     valid_imgs = cfg.get('headnode', 'base_imgs')
     valid_imgs = [img.strip() for img in valid_imgs.split(',')]
@@ -352,12 +394,10 @@ def headnode_create(headnode, project, base_img):
     if base_img not in valid_imgs:
         raise BadArgumentError('Provided image is not a valid image.')
     db = model.Session()
-
-    _assert_absent(db, model.Headnode, headnode)
     project = _must_find(db, model.Project, project)
 
+    _assert_absent(db, model.Headnode, headnode)
     headnode = model.Headnode(project, headnode, base_img)
-
     db.add(headnode)
     db.commit()
 
@@ -370,6 +410,9 @@ def headnode_delete(headnode):
     """
     db = model.Session()
     headnode = _must_find(db, model.Headnode, headnode)
+
+    authorize(headnode.project.label)
+
     if not headnode.dirty:
         headnode.delete()
     for hnic in headnode.hnics:
@@ -389,6 +432,9 @@ def headnode_start(headnode):
     """
     db = model.Session()
     headnode = _must_find(db, model.Headnode, headnode)
+
+    authorize(headnode.project.label)
+
     if headnode.dirty:
         headnode.create()
     headnode.start()
@@ -405,6 +451,9 @@ def headnode_stop(headnode):
     """
     db = model.Session()
     headnode = _must_find(db, model.Headnode, headnode)
+
+    authorize(headnode.project.label)
+
     headnode.stop()
 
 
@@ -419,6 +468,9 @@ def headnode_create_hnic(headnode, hnic):
     """
     db = model.Session()
     headnode = _must_find(db, model.Headnode, headnode)
+
+    authorize(headnode.project.label)
+
     _assert_absent_n(db, headnode, model.Hnic, hnic)
 
     if not headnode.dirty:
@@ -437,6 +489,9 @@ def headnode_delete_hnic(headnode, hnic):
     """
     db = model.Session()
     headnode = _must_find(db, model.Headnode, headnode)
+
+    authorize(headnode.project.label)
+
     hnic = _must_find_n(db, headnode, model.Hnic, hnic)
 
     if not headnode.dirty:
@@ -458,8 +513,10 @@ def headnode_connect_network(headnode, hnic, network):
     the given network.
     """
     db = model.Session()
-
     headnode = _must_find(db, model.Headnode, headnode)
+
+    authorize(headnode.project.label)
+
     hnic = _must_find_n(db, headnode, model.Hnic, hnic)
     network = _must_find(db, model.Network, network)
 
@@ -482,8 +539,10 @@ def headnode_detach_network(headnode, hnic):
     Raises IllegalStateError if the headnode has already been started.
     """
     db = model.Session()
-
     headnode = _must_find(db, model.Headnode, headnode)
+
+    authorize(headnode.project.label)
+
     hnic = _must_find_n(db, headnode, model.Hnic, hnic)
 
     if not headnode.dirty:
@@ -526,11 +585,15 @@ def network_create(network, creator, access, net_id):
             raise BadArgumentError("Project-created networks must be accessed only by that project.")
         if net_id != "":
             raise BadArgumentError("Project-created networks must use network ID allocation")
+        authorize(creator)
+
         creator = _must_find(db, model.Project, creator)
         access = _must_find(db, model.Project, access)
     else:
         # Administrator-owned network
         creator = None
+        # Authorize now to prevent project-enumeration by non-admin users.
+        authorize(None)
         if access == "":
             access = None
         else:
@@ -561,6 +624,12 @@ def network_delete(network):
     db = model.Session()
     network = _must_find(db, model.Network, network)
 
+    # XXX: Again, this might or might not be null, resulting in odd semantics.
+    if network.creator:
+        authorize(network.creator.label)
+    else:
+        authorize(None)
+
     if network.nics:
         raise BlockedError("Network still connected to nodes")
     if network.hnics:
@@ -586,11 +655,11 @@ def port_register(port):
 
     If the port already exists, a DuplicateError will be raised.
     """
-    db = model.Session()
+    authorize(None)
 
+    db = model.Session()
     _assert_absent(db, model.Port, port)
     port = model.Port(port)
-
     db.add(port)
     db.commit()
 
@@ -601,10 +670,10 @@ def port_delete(port):
 
     If the port does not exist, a NotFoundError will be raised.
     """
+    authorize(None)
+
     db = model.Session()
-
     port = _must_find(db, model.Port, port)
-
     db.delete(port)
     db.commit()
 
@@ -619,8 +688,9 @@ def port_connect_nic(port, node, nic):
     If the port or the nic is already connected to something, a DuplicateError will be
     raised.
     """
-    db = model.Session()
+    authorize(None)
 
+    db = model.Session()
     port = _must_find(db, model.Port, port)
     nic = _must_find_n(db, _must_find(db, model.Node, node), model.Nic, nic)
 
@@ -642,8 +712,9 @@ def port_detach_nic(port):
 
     If the port is not connected to anything, a NotFoundError will be raised.
     """
-    db = model.Session()
+    authorize(None)
 
+    db = model.Session()
     port = _must_find(db, model.Port, port)
 
     if port.nic is None:
@@ -656,6 +727,8 @@ def port_detach_nic(port):
 @rest_call('GET', '/free_nodes')
 def list_free_nodes():
     """List all nodes not in a project."""
+#    authorize(None)
+
     db = model.Session()
     nodes = db.query(model.Node).filter_by(project_id=None).all()
     nodes = [n.label for n in nodes]
@@ -665,6 +738,8 @@ def list_free_nodes():
 @rest_call('GET', '/project/<project>/nodes')
 def list_project_nodes(project):
     """List all nodes belonging to a project."""
+    authorize(project)
+
     db = model.Session()
     project = _must_find(db, model.Project, project)
     nodes = project.nodes
@@ -675,6 +750,8 @@ def list_project_nodes(project):
 @rest_call('GET', '/project/<project>/networks')
 def list_project_networks(project):
     """List all networks the project can access."""
+    authorize(project)
+
     db = model.Session()
     project = _must_find(db, model.Project, project)
     networks = project.networks_access
@@ -685,6 +762,10 @@ def list_project_networks(project):
 @rest_call('GET', '/node/<nodename>')
 def show_node(nodename):
     """Show details of a node."""
+#    authorize(None)
+    # Warning---if this call is expanded to show information such as network
+    # connectivity, we will need to refine the authorization as well.
+
     db = model.Session()
     node = _must_find(db, model.Node, nodename)
     return json.dumps({
@@ -701,6 +782,9 @@ def show_headnode(nodename):
     """Show details of a headnode."""
     db = model.Session()
     headnode = _must_find(db, model.Headnode, nodename)
+
+    authorize(headnode.project.label)
+
     return json.dumps({
         'name': headnode.label,
         'project': headnode.project.label,
@@ -712,6 +796,7 @@ def show_headnode(nodename):
 @rest_call('GET', '/headnode_images/')
 def list_headnode_images():
     """Show headnode images listed in config file."""
+#    authorize(None)
     valid_imgs = cfg.get('headnode', 'base_imgs')
     valid_imgs = [img.strip() for img in valid_imgs.split(',')]
     return json.dumps(valid_imgs)
@@ -725,6 +810,13 @@ def show_console(nodename):
     """Show the contents of the console log."""
     db = model.Session()
     node = _must_find(db, model.Node, nodename)
+
+    # XXX: Again, this might or might not be null, resulting in odd semantics.
+    if node.project:
+        authorize(node.project.label)
+    else:
+        authorize(None)
+
     log = node.get_console()
     if log is None:
         raise NotFoundError('The console log for %s '
@@ -736,6 +828,13 @@ def start_console(nodename):
     """Start logging output from the console."""
     db = model.Session()
     node = _must_find(db, model.Node, nodename)
+
+    # XXX: Again, this might or might not be null, resulting in odd semantics.
+    if node.project:
+        authorize(node.project.label)
+    else:
+        authorize(None)
+
     node.start_console()
 
 @rest_call('DELETE', '/node/<nodename>/console')
@@ -743,6 +842,13 @@ def stop_console(nodename):
     """Stop logging output from the console and delete the log."""
     db = model.Session()
     node = _must_find(db, model.Node, nodename)
+
+    # XXX: Again, this might or might not be null, resulting in odd semantics.
+    if node.project:
+        authorize(node.project.label)
+    else:
+        authorize(None)
+
     node.stop_console()
     node.delete_console()
 

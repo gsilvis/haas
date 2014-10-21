@@ -11,6 +11,7 @@
 # The driver to use for the network switch. The value must be the name of one
 # of the modules in haas.drivers:
 driver = simple_vlan
+auth = null
 
 [headnode]
 # The trunked network interface on the host. This is the nic that the VMs will

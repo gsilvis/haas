@@ -21,6 +21,7 @@ import inspect
 import sys
 import urllib
 import requests
+import importlib
 
 from functools import wraps
 
@@ -71,17 +72,28 @@ def object_url(*args):
         url += '/' + urllib.quote(arg,'')
     return url
 
+def client_auth():
+    """Get client-side authentication information.
+
+    This function is in cli.py firstly because it is client-side, and secondly
+    to avoid a circular import.
+    """
+
+    auth_name = cfg.get('general', 'auth')
+    auth = importlib.import_module('haas.auth_mechanisms.' + auth_name)
+    return auth.client_auth()
+
 def do_put(url, data={}):
-    return check_status_code(requests.put(url, data=data))
+    return check_status_code(requests.put(url, data=data, auth=client_auth()))
 
 def do_post(url, data={}):
-    return check_status_code(requests.post(url, data=data))
+    return check_status_code(requests.post(url, data=data, auth=client_auth()))
 
 def do_get(url):
-    return check_status_code(requests.get(url))
+    return check_status_code(requests.get(url, auth=client_auth()))
 
 def do_delete(url):
-    return check_status_code(requests.delete(url))
+    return check_status_code(requests.delete(url, auth=client_auth()))
 
 @cmd
 def serve():

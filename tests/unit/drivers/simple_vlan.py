@@ -35,6 +35,7 @@ def vlan_test(vlan_list):
             # Use the 'dell' backend for these tests
             cfg.add_section('general')
             cfg.set('general', 'driver', 'simple_vlan')
+            cfg.set('general', 'auth', 'null')
             cfg.add_section('vlan')
             cfg.set('vlan', 'vlans', vlan_list)
             cfg.add_section('driver simple_vlan')

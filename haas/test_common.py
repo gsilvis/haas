@@ -73,6 +73,7 @@ def database_only(f):
         # Use the 'null' backend for these tests
         cfg.add_section('general')
         cfg.set('general', 'driver', 'null')
+        cfg.set('general', 'auth', 'null')
         cfg.add_section('devel')
         cfg.set('devel', 'dry_run', True)
         cfg.add_section('headnode')
