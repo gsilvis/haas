@@ -55,29 +55,28 @@ def authorize(project):
     if local.auth["user"] == "admin":
         # Administrator can do anything
         return
+
+    if project is None:
+        # Non-administrator can't do admin actions
+        raise auth.UnauthorizedError(
+            "Admin privileges required for this operation.")
+
     db = model.Session()
-    if project:
-        project = db.query(model.Project).filter_by(label=project).first()
-        if not project:
-            # Prevent project enumeration
-            raise auth.UnauthorizedError(
-                "User not authorized to access this project.")
     user = db.query(model.User).filter_by(label=local.auth["user"]).first()
     if user is None:
         # Annoying race condition
         raise auth.UnauthorizedError(
             "User disappeared between authentication and authorization.")
-    if project:
-        # Check that user has access to project
-        if project in user.projects:
-            return
-        else:
-            raise auth.UnauthorizedError(
-                "User not authorized to access this project.")
-    else:
-        # We already checked whether or not the user is admin---they're not
+
+    project = db.query(model.Project).filter_by(label=project).first()
+    if (project is None) or (project not in user.projects):
+        # Either the project exists but the user doesn't have access to it, or
+        # the project doesn't exist.  Raise the same error either way, to
+        # prevent project enumeration.
         raise auth.UnauthorizedError(
-            "Admin privileges required for this operation.")
+            "User not authorized to access this project.")
+
+    return # Succesful authorization
 
 def client_auth():
     """Get user/password from system environment variables."""
