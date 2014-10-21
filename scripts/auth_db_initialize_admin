@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 # Copyright 2013-2014 Massachusetts Open Cloud Contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,17 +14,23 @@
 # express or implied.  See the License for the specific language
 # governing permissions and limitations under the License.
 
-from setuptools import setup, find_packages
-from pip.req import parse_requirements
+"""Create admin user with given password.
 
-requirements = [str(r.req) for r in parse_requirements('requirements.txt')]
+This is useful for initial setup of the HaaS, when using the 'db' auth
+mechanism.
+"""
 
-setup(name='haas',
-      version='1.0',
-      url='https://github.com/CCI-MOC/haas',
-      packages=find_packages(),
-      scripts=['scripts/haas',
-               'scripts/create_bridges',
-               'scripts/auth_db_initialize_admin'],
-      install_requires=requirements,
-      )
+from haas import model, config
+import sys
+
+config.load()
+model.init_db()
+db = model.Session()
+
+if db.query(model.User).filter_by(label="admin").first() is not None:
+    sys.stderr.write(
+        'An admin user already exists.  Not creating new admin user.\n')
+else:
+    user = model.User("admin", sys.argv[1])
+    db.add(user)
+    db.commit()
