@@ -21,7 +21,7 @@ well as prototypes for methods that authentication backends will use.
 import importlib
 
 from haas.config import cfg
-from haas.api import APIError
+from moc.rest import APIError
 
 
 class AuthenticationFailureError(APIError):
@@ -53,3 +53,10 @@ def authorize(project):
     auth = importlib.import_module('haas.auth_mechanisms.' + auth_name)
     auth.authenticate()
     auth.authorize(project)
+
+def client_auth():
+    """Get client-side authentication information."""
+
+    auth_name = cfg.get('general', 'auth')
+    auth = importlib.import_module('haas.auth_mechanisms.' + auth_name)
+    return auth.client_auth()

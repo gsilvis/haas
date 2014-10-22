@@ -15,6 +15,7 @@
 """This module implements the HaaS command line tool."""
 from haas import config
 from haas.config import cfg
+from haas.auth import client_auth
 
 import logging
 import inspect
@@ -71,17 +72,6 @@ def object_url(*args):
     for arg in args:
         url += '/' + urllib.quote(arg,'')
     return url
-
-def client_auth():
-    """Get client-side authentication information.
-
-    This function is in cli.py firstly because it is client-side, and secondly
-    to avoid a circular import.
-    """
-
-    auth_name = cfg.get('general', 'auth')
-    auth = importlib.import_module('haas.auth_mechanisms.' + auth_name)
-    return auth.client_auth()
 
 def do_put(url, data={}):
     return check_status_code(requests.put(url, data=data, auth=client_auth()))
