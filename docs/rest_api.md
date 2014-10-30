@@ -8,26 +8,23 @@ Full Api spec:
     [PUT]    /user/<user_label> {password=<password>}
     [DELETE] /user/<user_label>
 
-    group_add_user    <group_label> <user_label>
-    group_remove_user <group_label> <user_label>
-    [POST] /group/<group_label>/add_user {user=<user_label>}
-    [POST] /group/<group_label>/remove_user {user=<user_label>}
-
-    project_create <project_label> <group_label>
+    project_create <project_label>
     project_delete <project_label>
-    [PUT]    /project/<project_label> {group=<group_label>}
+    [PUT]    /project/<project_label>
     [DELETE] /project/<project_label>
 
-    network_create <network_label> <project_label>
+    network_create <network_label> <proj_creator> <proj_access> <net_id>
     network_delete <network_label>
-    [PUT]    /network/<network_label> {project=<project_label>}
+    [PUT]    /network/<network_label> {creator=<proj_creator>,
+                                       access=<proj_access>,
+                                       net_id=<net_id>}
     [DELETE] /network/<network_label>
 
-    headnode_create <hn_label> <project_label>
+    headnode_create <hn_label> <project_label> <base_img>
     headnode_delete <hn_label>
     headnode_start <hn_label>
     headnode_stop <hn_label>
-    [PUT]    /headnode/<hn_label> {project=<project_label>}
+    [PUT]    /headnode/<hn_label> {project=<project_label>, base_img=<base_img>}
     [DELETE] /headnode/<hn_label>
     [POST] /headnode/<hn_label>/start
     [POST] /headnode/<hn_label>/stop
@@ -36,9 +33,6 @@ Full Api spec:
     project_detach_node  <project_label> <node_label>
     [POST] /project/<project_label>/connect_node {node=<node_label>}
     [POST] /project/<project_label>/detach_node {node=<node_label>}
-
-    project_apply <project_label>
-    [POST] /project/<project_label>/apply
 
     node_connect_network <node_label> <nic_label> <network_label>
     node_detach_network  <node_label> <nic_label>
@@ -68,20 +62,15 @@ Full Api spec:
     [PUT]    /node/<node_label>/nic/<nic_label> {mac_addr=<mac_addr>}
     [DELETE] /node/<node_label>/nic/<nic_label>
 
-    switch_register  <switch_label> <driver>
-    switch_delete    <switch_label>
-    [PUT]    /switch/<switch_label> {driver=<driver>}
-    [DELETE] /switch/<switch_label>
+    port_register  <port_no>
+    port_delete    <port_no>
+    [PUT]    /port/<port_no>
+    [DELETE] /port/<port_no>
 
-    port_register  <switch_label> <port_no>
-    port_delete    <switch_label> <port_no>
-    [PUT]    /switch/<switch_label>/port/<port_no>
-    [DELETE] /switch/<switch_label>/port/<port_no>
-
-    port_connect_nic <switch_label> <port_no> <node_label> <nic_label>
-    port_detach_nic  <switch_label> <port_no>
-    [POST] /switch/<switch_label>/port/<port_no>/connect_nic
-    [POST] /switch/<switch_label>/port/<port_no>/detach_nic
+    port_connect_nic <port_no> <node_label> <nic_label>
+    port_detach_nic  <port_no>
+    [POST] /port/<port_no>/connect_nic
+    [POST] /port/<port_no>/detach_nic
 
     import_vlan <network_label> <vlan_label>
     block_user <user_label>

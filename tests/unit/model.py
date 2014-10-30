@@ -61,12 +61,6 @@ class TestUsers(ModelTest):
         return User('bob', 'secret')
 
 
-class TestGroup(ModelTest):
-
-    def sample_obj(self):
-        return Group('moc-hackers')
-
-
 class TestNic(ModelTest):
 
     def sample_obj(self):
@@ -83,29 +77,33 @@ class TestNode(ModelTest):
 class TestProject(ModelTest):
 
     def sample_obj(self):
-        return Project(Group('acme_corp'), 'manhattan')
-
-
-class TestSwitch(ModelTest):
-
-    def sample_obj(self):
-        return Switch('dev-switch', 'acme_corp')
+        return Project('manhattan')
 
 
 class TestHeadnode(ModelTest):
 
     def sample_obj(self):
-        return Headnode(Project(Group('acme_corp'), 'anvil-nextgen'), 'hn-example')
+        return Headnode(Project('anvil-nextgen'), 'hn-example', 'base-headnode')
 
 
 class TestHnic(ModelTest):
 
     def sample_obj(self):
-        return Hnic(Headnode(Project(Group('acme-corp'), 'anvil-nextgen'),
-            'hn-0'), 'storage', '00:11:22:33:44:55')
+        return Hnic(Headnode(Project('anvil-nextgen'),
+            'hn-0', 'base-headnode'), 'storage')
 
 
 class TestNetwork(ModelTest):
 
     def sample_obj(self):
-        return Network(Project(Group('acme_corp'), 'anvil-nextgen'), '102', 'hammernet')
+        pj = Project('anvil-nextgen')
+        return Network(pj, pj, True, '102', 'hammernet')
+
+class TestNetworkingAction(ModelTest):
+
+    def sample_obj(self):
+        nic = Nic(Node('node-99', 'ipmihost', 'root', 'tapeworm'),
+                  'ipmi', '00:11:22:33:44:55')
+        project = Project('anvil-nextgen')
+        network = Network(project, project, True, '102', 'hammernet')
+        return NetworkingAction(nic, network)

@@ -60,7 +60,6 @@ class TestApply:
         api.group_create('acme-code')
         api.project_create('anvil-nextgen', 'acme-code')
         api.network_create('hammernet', 'anvil-nextgen')
-        api.project_apply('anvil-nextgen')
 
     @vlan_test('84')
     def test_network_apply_complex(self, db):
@@ -83,4 +82,3 @@ class TestApply:
         api.node_connect_network('node-1-2', 'eth0', 'hammernet')
         api.node_connect_network('node-2-1', 'eth0', 'hammernet')
         api.node_connect_network('node-2-2', 'eth0', 'hammernet')
-        api.project_apply('anvil-nextgen')

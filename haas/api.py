@@ -16,31 +16,23 @@
 
 TODO: Spec out and document what sanitization is required.
 """
-from flask import Flask, request
-from functools import wraps
-import inspect
 import importlib
 import json
 import logging
 
 from haas import model
 from haas.config import cfg
-
-
-class APIError(Exception):
-    """An exception indicating an error that should be reported to the user.
-
-    i.e. If such an error occurs in a rest API call, it should be reported as
-    part of the HTTP response.
-    """
+from moc.rest import APIError, rest_call
 
 
 class NotFoundError(APIError):
     """An exception indicating that a given resource does not exist."""
+    status_code = 404 # Not Found
 
 
 class DuplicateError(APIError):
     """An exception indicating that a given resource already exists."""
+    status_code = 409 # Conflict
 
 
 class AllocationError(APIError):
@@ -50,99 +42,37 @@ class AllocationError(APIError):
 class BadArgumentError(APIError):
     """An exception indicating an invalid request on the part of the user."""
 
+
 class ProjectMismatchError(APIError):
     """An exception indicating that the resources given don't belong to the
     same project.
     """
+    status_code = 409 # Conflict
+
 
 class BlockedError(APIError):
     """An exception indicating that the requested action cannot happen until
     some other change.  For example, deletion is blocked until the components
     are deleted, and possibly until the dirty flag is cleared as well.
     """
+    status_code = 409 # Conflict
+
 
 class IllegalStateError(APIError):
     """The request is invalid due to the state of the system.
 
     The request might otherwise be perfectly valid.
     """
+    status_code = 409 # Conflict
 
 
-app = Flask(__name__)
+class ServerError(APIError):
+    """An error occurred when trying to process the request.
 
-
-def handle_client_errors(f):
-    """A decorator which adds some error handling.
-
-    If the function decorated with `handle_client_errors` raises an exception
-    of type `APIError`, the error will be reported to the client, whereas
-    other exceptions (being indications of a bug in the HaaS) will not be.
+    This likely not the client's fault; as such the HTTP status is 500.
+    The semantics are much the same as the corresponding HTTP error.
     """
-    @wraps(f)
-    def wrapped(*args, **kwargs):
-        logger = logging.getLogger(__name__)
-        logger.debug('Received API call %s(*%r, **%r)' %
-                     (f.__name__, args, kwargs))
-        try:
-            resp = f(*args, **kwargs)
-        except APIError as e:
-            # Right now we're always returning 400 (Bad Request). This probably
-            # isn't actually the right thing to do.
-            #
-            # Additionally, we're getting deprecation errors about the use of
-            # the message attribute. TODO: figure out what the right way to do
-            # this is.
-            logger.debug('API call invalid: %s' % e.message)
-            return e.message, 400
-        if resp:
-            logger.debug('API call succesful: %s', resp)
-            return resp
-        else:
-            logger.debug('API call succesful, no response body')
-            return ''
-    return wrapped
-
-def rest_call(method, path):
-    """A decorator which generates a rest mapping to a python api call.
-
-    path - the url-path to map the function to. The format is the same as for
-           flask's router (e.g. app.route('/foo/<bar>/baz',...))
-    method - the HTTP method for the api call
-
-    Any parameters to the function not designated in the url will be pull from
-    the form data.
-
-    For example, given:
-
-        @rest_call('POST', '/some-url/<baz>/<bar>')
-        def foo(bar, baz, quux):
-            pass
-
-    When a POST request to /some-url/*/* occurs, `foo` will be invoked
-    with its bar and baz arguments pulleed from the url, and its quux from
-    the form data in the body.
-
-    The original function will returned by the call, not the wrapper. This
-    way the test suite doesn't have to deal with the things flask has done
-    to it - it can invoke the raw api calls..
-    """
-    def wrapper(func):
-        argnames, _, _, _ = inspect.getargspec(func)
-
-        @app.route(path, methods=[method])
-        @handle_client_errors
-        @wraps(func)
-        def wrapped(*args, **kwargs):
-            positional_args = []
-            for name in argnames:
-                if name in kwargs:
-                    positional_args.append(kwargs[name])
-                    del kwargs[name]
-                else:
-                    positional_args.append(request.form[name])
-            return func(*positional_args, **kwargs)
-        return func
-    return wrapper
+    status_code = 500
 
 
 @rest_call('PUT', '/user/<user>')
@@ -169,80 +99,20 @@ def user_delete(user):
     db.delete(user)
     db.commit()
 
-                            # Group Code #
-                            ##############
-
-
-@rest_call('PUT', '/group/<group>')
-def group_create(group):
-    """Create group.
-
-    If the group already exists, a DuplicateError will be raised.
-    """
-    db = model.Session()
-    _assert_absent(db, model.Group, group)
-    group = model.Group(group)
-    db.add(group)
-    db.commit()
-
-
-@rest_call('DELETE', '/group/<group>')
-def group_delete(group):
-    """Delete group.
-
-    If the group does not exist, a NotFoundError will be raised.
-    """
-    db = model.Session()
-    group = _must_find(db, model.Group, group)
-    db.delete(group)
-    db.commit()
-
-
-@rest_call('POST', '/group/<group>/add_user')
-def group_add_user(group, user):
-    """Add a user to a group.
-
-    If the group or user does not exist, a NotFoundError will be raised.
-    """
-    db = model.Session()
-    user = _must_find(db, model.User, user)
-    group = _must_find(db, model.Group, group)
-    if group in user.groups:
-        raise DuplicateError(user.label)
-    user.groups.append(group)
-    db.commit()
-
-
-@rest_call('POST', '/group/<group>/remove_user')
-def group_remove_user(group, user):
-    """Remove a user from a group.
-
-    If the group or user does not exist, a NotFoundError will be raised.
-    """
-    db = model.Session()
-    user = _must_find(db, model.User, user)
-    group = _must_find(db, model.Group, group)
-    if group not in user.groups:
-        raise NotFoundError(user.label)
-    user.groups.remove(group)
-    db.commit()
 
                             # Project Code #
                             ################
 
 
 @rest_call('PUT', '/project/<project>')
-def project_create(project, group):
-    """Create project belonging to the given group.
+def project_create(project):
+    """Create a project.
 
     If the project already exists, a DuplicateError will be raised.
-
-    If the group does not exist, a NotFoundError will be raised.
     """
     db = model.Session()
     _assert_absent(db, model.Project, project)
-    group = _must_find(db, model.Group, group)
-    project = model.Project(group, project)
+    project = model.Project(project)
     db.add(project)
     db.commit()
 
@@ -257,48 +127,24 @@ def project_delete(project):
     project = _must_find(db, model.Project, project)
     if project.nodes:
         raise BlockedError("Project has nodes still")
-    if project.networks:
+    if project.networks_created:
         raise BlockedError("Project still has networks")
+    if project.networks_access:
+        ### FIXME: This is not the user's fault, and they cannot fix it.  The
+        ### only reason we need to error here is that, with how network access
+        ### is done, the following bad thing happens.  If there's a network
+        ### that only the project can access, its "access" field will be the
+        ### project.  When you then delete that project, "access" will be set
+        ### to None instead.  Counter-intuitively, this then makes that
+        ### network accessible to ALL PROJECTS!  Once we use real ACLs, this
+        ### will not be an issue---instead, the network will be accessible by
+        ### NO projects.
+        raise BlockedError("Project can still access networks")
     if project.headnode:
-        ### FIXME: If you ever create a headnode, you can't delete it right
-        ### now.  This essentially makes deletion of projects impossible.
         raise BlockedError("Project still has a headnode")
     db.delete(project)
     db.commit()
 
-
-@rest_call('POST', '/project/<project>/apply')
-def project_apply(project):
-    """Apply networking of project.
-
-    If the project does not exist, a NotFoundError will be raised.
-
-    TODO: there are other possible errors, document them and how they are
-    handled.
-    """
-    driver_name = cfg.get('general', 'driver')
-    driver = importlib.import_module('haas.drivers.' + driver_name)
-
-    db = model.Session()
-    project = _must_find(db, model.Project, project)
-
-    net_map = {}
-    for node in project.nodes:
-        for nic in node.nics:
-            if not nic.port:
-                # This setup suggests a badly made HaaS setup.  NICs with no
-                # port might as well not exist.
-                logging.getLogger(__name__).warn(
-                    'Not attaching NIC %s to network %s; NIC not on a port.' %
-                    (nic.label, nic.network.label))
-            elif nic.network:
-                net_map[nic.port.label] = nic.network.network_id
-            else:
-                net_map[nic.port.label] = None
-    driver.apply_networking(net_map)
-
-    project.dirty = False
-    db.commit()
 
 @rest_call('POST', '/project/<project>/connect_node')
 def project_connect_node(project, node):
@@ -327,9 +173,43 @@ def project_detach_node(project, node):
     for nic in node.nics:
         if nic.network is not None:
             raise BlockedError("Node attached to a network")
-    if project.dirty:
-        raise BlockedError("Project dirty")
+        if nic.current_action is not None:
+            raise BlockedError("Node has a networking operation active on it.")
+    node.stop_console()
+    node.delete_console()
     project.nodes.remove(node)
+    db.commit()
+
+
+@rest_call('POST', '/project/<project>/add_user')
+def project_add_user(project, user):
+    """Add a user to a project.
+
+    If the project or user does not exist, a NotFoundError will be raised.
+    """
+    db = model.Session()
+    user = _must_find(db, model.User, user)
+    project = _must_find(db, model.Project, project)
+    if project in user.projects:
+        raise DuplicateError('User %s is already in project %s'%
+                             (user.label, project.label))
+    user.projects.append(project)
+    db.commit()
+
+
+@rest_call('POST', '/project/<project>/remove_user')
+def project_remove_user(project, user):
+    """Remove a user from a project.
+
+    If the project or user does not exist, a NotFoundError will be raised.
+    """
+    db = model.Session()
+    user = _must_find(db, model.User, user)
+    project = _must_find(db, model.Project, project)
+    if project not in user.projects:
+        raise NotFoundError("User %s is not in project %s"%
+                            (user.label, project.label))
+    user.projects.remove(project)
     db.commit()
 
 
@@ -355,7 +235,7 @@ def node_power_cycle(node):
     db = model.Session()
     node = _must_find(db, model.Node, node)
     if not node.power_cycle():
-        return 'Could not power cycle node %s' % node.label, 500
+        raise ServerError('Could not power cycle node %s' % node.label)
 
 
 @rest_call('DELETE', '/node/<node>')
@@ -366,6 +246,8 @@ def node_delete(node):
     """
     db = model.Session()
     node = _must_find(db, model.Node, node)
+    node.stop_console()
+    node.delete_console()
     db.delete(node)
     db.commit()
 
@@ -400,7 +282,11 @@ def node_delete_nic(node, nic):
 
 @rest_call('POST', '/node/<node>/nic/<nic>/connect_network')
 def node_connect_network(node, nic, network):
-    """Connect a physical NIC to a network."""
+    """Connect a physical NIC to a network.
+
+    Raises ProjectMismatchError if the node is not in a project, or if the
+    project does not have access rights to the given network.
+    """
     db = model.Session()
 
     node = _must_find(db, model.Node, node)
@@ -410,33 +296,22 @@ def node_connect_network(node, nic, network):
     if not node.project:
         raise ProjectMismatchError("Node not in project")
 
-    if node.project.label is not network.project.label:
-        raise ProjectMismatchError("Node and network in different projects")
-
     project = node.project
 
-    if nic.network:
-        # The nic is already part of a network; report an error to the user.
-        raise DuplicateError('nic %s on node %s is already part of a network' %
-                (nic.label, node.label))
+    if nic.current_action:
+        raise BlockedError("A networking operation is already active on the nic.")
 
-    nic.network = network
-    project.dirty = True
+    if (network.access is not None) and (network.access is not project):
+        raise ProjectMismatchError("Project does not have access to given network.")
+
+    db.add(model.NetworkingAction(nic, network))
     db.commit()
-
 
 @rest_call('POST', '/node/<node>/nic/<nic>/detach_network')
 def node_detach_network(node, nic):
-    """Detach a physical nic from the network it's on.
-
-    Raises NotFoundError if the node or the nic does not exist.
-
-    Raises NotFoundError if the nic is not on a network.
+    """Detach a physical nic from any network it's on.
 
     Raises ProjectMismatchError if the node is not in a project.
-
-    If the nic is not already a member of a network, this function does
-    nothing.
     """
     db = model.Session()
     node = _must_find(db, model.Node, node)
@@ -447,19 +322,19 @@ def node_detach_network(node, nic):
 
     project = nic.owner.project
 
-    if nic.network is None:
-        raise NotFoundError('nic %s on node %s is not attached' % (nic.label, node.label))
+    if nic.current_action:
+        raise BlockedError("A networking operation is already active on the nic.")
 
-    nic.network = None
-    project.dirty = True
+    db.add(model.NetworkingAction(nic, None))
     db.commit()
+
 
                             # Head Node Code #
                             ##################
 
 
 @rest_call('PUT', '/headnode/<headnode>')
-def headnode_create(headnode, project):
+def headnode_create(headnode, project, base_img):
     """Create headnode.
 
     If a node with the same name already exists, a DuplicateError will be
@@ -470,16 +345,18 @@ def headnode_create(headnode, project):
     If the project does not exist, a NotFoundError will be raised.
 
     """
+
+    valid_imgs = cfg.get('headnode', 'base_imgs')
+    valid_imgs = [img.strip() for img in valid_imgs.split(',')]
+
+    if base_img not in valid_imgs:
+        raise BadArgumentError('Provided image is not a valid image.')
     db = model.Session()
 
     _assert_absent(db, model.Headnode, headnode)
     project = _must_find(db, model.Project, project)
 
-    if project.headnode is not None:
-        raise DuplicateError('project %s already has a headnode' %
-                             (project.label))
-
-    headnode = model.Headnode(project, headnode)
+    headnode = model.Headnode(project, headnode, base_img)
 
     db.add(headnode)
     db.commit()
@@ -491,9 +368,12 @@ def headnode_delete(headnode):
 
     If the node does not exist, a NotFoundError will be raised.
     """
-    ### XXX This should never succeed currently.
     db = model.Session()
     headnode = _must_find(db, model.Headnode, headnode)
+    if not headnode.dirty:
+        headnode.delete()
+    for hnic in headnode.hnics:
+        db.delete(hnic)
     db.delete(headnode)
     db.commit()
 
@@ -529,7 +409,7 @@ def headnode_stop(headnode):
 
 
 @rest_call('PUT', '/headnode/<headnode>/hnic/<hnic>')
-def headnode_create_hnic(headnode, hnic, macaddr):
+def headnode_create_hnic(headnode, hnic):
     """Create hnic attached to given headnode.
 
     If the node does not exist, a NotFoundError will be raised.
@@ -544,7 +424,7 @@ def headnode_create_hnic(headnode, hnic, macaddr):
     if not headnode.dirty:
         raise IllegalStateError
 
-    hnic = model.Hnic(headnode, hnic, macaddr)
+    hnic = model.Hnic(headnode, hnic)
     db.add(hnic)
     db.commit()
 
@@ -570,7 +450,13 @@ def headnode_delete_hnic(headnode, hnic):
 
 @rest_call('POST', '/headnode/<headnode>/hnic/<hnic>/connect_network')
 def headnode_connect_network(headnode, hnic, network):
-    """Connect a headnode's hnic to a network."""
+    """Connect a headnode's hnic to a network.
+
+    Raises IllegalStateError if the headnode has already been started.
+
+    Raises ProjectMismatchError if the project does not have access rights to
+    the given network.
+    """
     db = model.Session()
 
     headnode = _must_find(db, model.Headnode, headnode)
@@ -580,28 +466,20 @@ def headnode_connect_network(headnode, hnic, network):
     if not headnode.dirty:
         raise IllegalStateError
 
-    if headnode.project.label is not network.project.label:
-        raise ProjectMismatchError("Headnode and network in different projects")
+    project = headnode.project
 
-    if hnic.network:
-        # The nic is already part of a network; report an error to the user.
-        raise DuplicateError('hnic %s on headnode %s is already part of a network' %
-                (hnic.label, headnode.label))
+    if (network.access is not None) and (network.access is not project):
+        raise ProjectMismatchError("Project does not have access to given network.")
+
     hnic.network = network
-    headnode.project.dirty = True
     db.commit()
 
 
 @rest_call('POST', '/headnode/<headnode>/hnic/<hnic>/detach_network')
 def headnode_detach_network(headnode, hnic):
-    """Detach a heanode's nic from the network it's on.
+    """Detach a heanode's nic from any network it's on.
 
-    Raises NotFoundError if the headnode or the hnic don't exist.
-
-    Raises NotFoundError if the hnic is not on a network.
-
-    If the nic is not already a member of a network, this function does
-    nothing.
+    Raises IllegalStateError if the headnode has already been started.
     """
     db = model.Session()
 
@@ -611,12 +489,7 @@ def headnode_detach_network(headnode, hnic):
     if not headnode.dirty:
         raise IllegalStateError
 
-    if hnic.network is None:
-        raise NotFoundError('hnic %s on headnode %s not attached'
-                            % (hnic.label, headnode.label))
-
     hnic.network = None
-    headnode.project.dirty = True
     db.commit()
 
                             # Network Code #
@@ -624,24 +497,57 @@ def headnode_detach_network(headnode, hnic):
 
 
 @rest_call('PUT', '/network/<network>')
-def network_create(network, project):
-    """Create a network belonging to a project.
+def network_create(network, creator, access, net_id):
+    """Create a network.
 
-    If the network already exists, a DuplicateError will be raised.
-    If the network cannot be allocated (due to resource exhaustion), an
-    AllocationError will be raised.
+    If the network with that name already exists, a DuplicateError will be
+    raised.
+
+    If the combination of creator, access, and net_id is illegal, a
+    BadArgumentError will be raised.
+
+    If network ID allocation was requested, and the network cannot be
+    allocated (due to resource exhaustion), an AllocationError will be raised.
+
+    Pass 'admin' as creator for an administrator-owned network.  Pass '' as
+    access for a publicly accessible network.  Pass '' as net_id if you wish
+    to use the HaaS's network-id allocation pool.
+
+    Details of the various combinations of network attributes are in
+    docs/networks.md
     """
     db = model.Session()
     _assert_absent(db, model.Network, network)
-    project = _must_find(db, model.Project, project)
 
-    driver_name = cfg.get('general', 'driver')
-    driver = importlib.import_module('haas.drivers.' + driver_name)
-    network_id = driver.get_new_network_id(db)
-    if network_id is None:
-        raise AllocationError('No more networks')
+    # Check legality of arguments, and find correct 'access' and 'creator'
+    if creator != "admin":
+        # Project-owned network
+        if access != creator:
+            raise BadArgumentError("Project-created networks must be accessed only by that project.")
+        if net_id != "":
+            raise BadArgumentError("Project-created networks must use network ID allocation")
+        creator = _must_find(db, model.Project, creator)
+        access = _must_find(db, model.Project, access)
+    else:
+        # Administrator-owned network
+        creator = None
+        if access == "":
+            access = None
+        else:
+            access = _must_find(db, model.Project, access)
 
-    network = model.Network(project, network_id, network)
+    # Allocate net_id, if requested
+    if net_id == "":
+        driver_name = cfg.get('general', 'driver')
+        driver = importlib.import_module('haas.drivers.' + driver_name)
+        net_id = driver.get_new_network_id(db)
+        if net_id is None:
+            raise AllocationError('No more networks')
+        allocated = True
+    else:
+        allocated = False
+
+    network = model.Network(creator, access, allocated, net_id, network)
     db.add(network)
     db.commit()
 
@@ -659,88 +565,63 @@ def network_delete(network):
         raise BlockedError("Network still connected to nodes")
     if network.hnics:
         raise BlockedError("Network still connected to headnodes")
-    if network.project.dirty:
-        raise BlockedError("Project dirty")
-
-    driver_name = cfg.get('general', 'driver')
-    driver = importlib.import_module('haas.drivers.' + driver_name)
-    driver.free_network_id(db, network.network_id)
+    if network.scheduled_nics:
+        raise BlockedError("Network scheduled to become connected to nodes.")
+    if network.allocated:
+        driver_name = cfg.get('general', 'driver')
+        driver = importlib.import_module('haas.drivers.' + driver_name)
+        driver.free_network_id(db, network.network_id)
 
     db.delete(network)
     db.commit()
 
 
-                            # Switch code #
-                            ###############
-
-@rest_call('PUT', '/switch/<switch>')
-def switch_register(switch, driver):
-    """Register a switch.
-
-    If the switch already exists, a DuplicateError will be raised.
-    """
-    db = model.Session()
-    _assert_absent(db, model.Switch, switch)
-    switch = model.Switch(switch, driver)
-    db.add(switch)
-    db.commit()
+                            # Port code #
+                            #############
 
 
-@rest_call('DELETE', '/switch/<switch>')
-def switch_delete(switch):
-    """Delete a switch."""
-    db = model.Session()
-    switch = _must_find(db, model.Switch, switch)
-    db.delete(switch)
-    db.commit()
-
-
-@rest_call('PUT', '/switch/<switch>/port/<path:port>')
-def port_register(switch, port):
+@rest_call('PUT', '/port/<path:port>')
+def port_register(port):
     """Register a port on a switch.
 
     If the port already exists, a DuplicateError will be raised.
-
-    If the switch does not exist, a NotFoundError will be raised.
     """
     db = model.Session()
 
-    switch = _must_find(db, model.Switch, switch)
-    _assert_absent_n(db, switch, model.Port, port)
+    _assert_absent(db, model.Port, port)
+    port = model.Port(port)
 
-    port = model.Port(switch, port)
     db.add(port)
     db.commit()
 
 
-@rest_call('DELETE', '/switch/<switch>/port/<path:port>')
-def port_delete(switch, port):
+@rest_call('DELETE', '/port/<path:port>')
+def port_delete(port):
     """Delete a port on a switch.
 
-    If the port does not exist, or if the switch does not exist, a
-    NotFoundError will be raised.
+    If the port does not exist, a NotFoundError will be raised.
     """
     db = model.Session()
 
-    port = _must_find_n(db, _must_find(db, model.Switch, switch), model.Port, port)
+    port = _must_find(db, model.Port, port)
 
     db.delete(port)
     db.commit()
 
 
-@rest_call('POST', '/switch/<switch>/port/<path:port>/connect_nic')
-def port_connect_nic(switch, port, node, nic):
+@rest_call('POST', '/port/<path:port>/connect_nic')
+def port_connect_nic(port, node, nic):
     """Connect a port on a switch to a nic on a node.
 
-    If any of the four arguments does not exist, a NotFoundError will be
+    If any of the three arguments does not exist, a NotFoundError will be
     raised.
 
-    If the port or the nic are already connected to something, a
-    DuplicateError will be raised.
+    If the port or the nic is already connected to something, a DuplicateError will be
+    raised.
     """
     db = model.Session()
 
-    port = _must_find_n(db, _must_find(db, model.Switch, switch), model.Port, port)
+    port = _must_find(db, model.Port, port)
     nic = _must_find_n(db, _must_find(db, model.Node, node), model.Nic, nic)
 
     if nic.port is not None:
@@ -753,17 +634,17 @@ def port_connect_nic(switch, port, node, nic):
     db.commit()
 
 
-@rest_call('POST', '/switch/<switch>/port/<path:port>/detach_nic')
-def port_detach_nic(switch, port):
-    """Detach attached nic from a port.
+@rest_call('POST', '/port/<path:port>/detach_nic')
+def port_detach_nic(port):
+    """Detach a port from the nic it's attached to
 
-    If the port or switch are not found, a NotFoundError will be raised.
+    If the port does not exist, a NotFoundError will be raised.
 
     If the port is not connected to anything, a NotFoundError will be raised.
     """
     db = model.Session()
 
-    port = _must_find_n(db, _must_find(db, model.Switch, switch), model.Port, port)
+    port = _must_find(db, model.Port, port)
 
     if port.nic is None:
         raise NotFoundError(port.label + " not attached")
@@ -791,6 +672,16 @@ def list_project_nodes(project):
     return json.dumps(nodes)
 
 
+@rest_call('GET', '/project/<project>/networks')
+def list_project_networks(project):
+    """List all networks the project can access."""
+    db = model.Session()
+    project = _must_find(db, model.Project, project)
+    networks = project.networks_access
+    networks = [n.label for n in networks]
+    return json.dumps(networks)
+
+
 @rest_call('GET', '/node/<nodename>')
 def show_node(nodename):
     """Show details of a node."""
@@ -799,7 +690,9 @@ def show_node(nodename):
     return json.dumps({
         'name': node.label,
         'free': node.project_id is None,
-        'nics': [n.label for n in node.nics],
+        'nics': [{'label': n.label,
+                  'macaddr': n.mac_addr,
+                  } for n in node.nics],
     })
 
 
@@ -814,6 +707,44 @@ def show_headnode(nodename):
         'hnics': [n.label for n in headnode.hnics],
         'vncport': headnode.get_vncport(),
     })
+
+
+@rest_call('GET', '/headnode_images/')
+def list_headnode_images():
+    """Show headnode images listed in config file."""
+    valid_imgs = cfg.get('headnode', 'base_imgs')
+    valid_imgs = [img.strip() for img in valid_imgs.split(',')]
+    return json.dumps(valid_imgs)
+
+
+    # Console code #
+    ################
+
+@rest_call('GET', '/node/<nodename>/console')
+def show_console(nodename):
+    """Show the contents of the console log."""
+    db = model.Session()
+    node = _must_find(db, model.Node, nodename)
+    log = node.get_console()
+    if log is None:
+        raise NotFoundError('The console log for %s '
+                            'does not exist.' % nodename)
+    return log
+
+@rest_call('PUT', '/node/<nodename>/console')
+def start_console(nodename):
+    """Start logging output from the console."""
+    db = model.Session()
+    node = _must_find(db, model.Node, nodename)
+    node.start_console()
+
+@rest_call('DELETE', '/node/<nodename>/console')
+def stop_console(nodename):
+    """Stop logging output from the console and delete the log."""
+    db = model.Session()
+    node = _must_find(db, model.Node, nodename)
+    node.stop_console()
+    node.delete_console()
 
 
     # Helper functions #
@@ -833,7 +764,7 @@ def _assert_absent(session, cls, name):
     """
     obj = session.query(cls).filter_by(label=name).first()
     if obj:
-        raise DuplicateError(cls.__name__ + ': ' + name)
+        raise DuplicateError("%s %s already exists." % (cls.__name__, name))
 
 
 def _must_find(session, cls, name):
@@ -850,7 +781,7 @@ def _must_find(session, cls, name):
     """
     obj = session.query(cls).filter_by(label=name).first()
     if not obj:
-        raise NotFoundError(cls.__name__ + ': ' + name)
+        raise NotFoundError("%s %s does not exist." % (cls.__name__, name))
     return obj
 
 def _namespaced_query(session, obj_outer, cls_inner, name_inner):
@@ -873,7 +804,9 @@ def _assert_absent_n(session, obj_outer, cls_inner, name_inner):
     """
     obj_inner = _namespaced_query(session, obj_outer, cls_inner, name_inner)
     if obj_inner is not None:
-        raise DuplicateError(cls_inner.__name__ + " " + obj_outer.label + " " + name_inner)
+        raise DuplicateError("%s %s on %s %s already exists" %
+                             (cls_inner.__name__, name_inner,
+                              obj_outer.__class__.__name__, obj_outer.label))
 
 def _must_find_n(session, obj_outer, cls_inner, name_inner):
     """Searches the database for a "namespaced" object, such as a nic on a node.
@@ -889,5 +822,7 @@ def _must_find_n(session, obj_outer, cls_inner, name_inner):
     """
     obj_inner = _namespaced_query(session, obj_outer, cls_inner, name_inner)
     if obj_inner is None:
-        raise NotFoundError(cls_inner.__name__ + " " + obj_outer.label + " " + name_inner)
+        raise NotFoundError("%s %s on %s %s does not exist." %
+                            (cls_inner.__name__, name_inner,
+                             obj_outer.__class__.__name__, obj_outer.label))
     return obj_inner

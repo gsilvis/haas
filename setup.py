@@ -19,8 +19,8 @@ requirements = [str(r.req) for r in parse_requirements('requirements.txt')]
 
 setup(name='haas',
       version='1.0',
-      url='https://github.com/CCI-MOC/moc-public',
+      url='https://github.com/CCI-MOC/haas',
       packages=find_packages(),
-      scripts=['scripts/haas', 'scripts/create_dell_vlans'],
+      scripts=['scripts/haas', 'scripts/create_bridges'],
       install_requires=requirements,
       )

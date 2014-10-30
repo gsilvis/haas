@@ -1,5 +1,4 @@
 {
-    "switch": "dell",
     "driver": "dell",
     "nodes" : [ 
         {
@@ -14,6 +13,7 @@
                     "name": "nic2",
                     "mac" : "de:ad:be:ef:20:15",
                     "port": "gi1/0/2"
+		}
             ],
             "ipmi": {
                 "host": "192.168.1.1",

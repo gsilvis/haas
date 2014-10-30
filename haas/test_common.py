@@ -18,6 +18,20 @@ from haas.config import cfg
 from haas import api
 import json
 
+def network_create_simple(network, project):
+    """Create a simple project-owned network.
+
+    This is a shorthand for the network_create API call, that defaults
+    parameters to the most common case---namely, that the network is owned by
+    a project, has access only by that project, and uses an allocated
+    underlying net_id.  Note that this is the only valid set of parameters for
+    a network that belongs to a project.
+
+    The test-suite uses this extensively, for tests that don't care about more
+    complicated features of networks.
+    """
+    api.network_create(network, project, project, "")
+
 def newDB():
     """Configures and returns an in-memory DB connection"""
     init_db(create=True,uri="sqlite:///:memory:")
@@ -61,6 +75,8 @@ def database_only(f):
         cfg.set('general', 'driver', 'null')
         cfg.add_section('devel')
         cfg.set('devel', 'dry_run', True)
+        cfg.add_section('headnode')
+        cfg.set('headnode', 'base_imgs', 'base-headnode, img1, img2, img3, img4')
 
     @wraps(f)
     @clear_configuration
@@ -94,17 +110,21 @@ def deployment_test(f):
         layout = json.load(layout_json_data)
         layout_json_data.close()
 
-        api.switch_register(layout['switch'], layout['driver'])
-
+        netmap = {}
         for node in layout['nodes']:
             api.node_register(node['name'], node['ipmi']['host'],
                 node['ipmi']['user'], node['ipmi']['pass'])
             for nic in node['nics']:
                 api.node_register_nic(node['name'], nic['name'], nic['mac'])
-                api.port_register(layout['switch'], nic['port'])
-                api.port_connect_nic(
-                    layout['switch'], nic['port'],
-                    node['name'], nic['name'])
+                api.port_register(nic['port'])
+                api.port_connect_nic(nic['port'], node['name'], nic['name'])
+                netmap[nic['port']] = None
+
+        # Now ensure that all of these ports are turned off
+        driver_name = cfg.get('general', 'driver')
+        driver = importlib.import_module('haas.drivers.' + driver_name)
+        driver.apply_networking(netmap)
+
 
     @wraps(f)
     @clear_configuration

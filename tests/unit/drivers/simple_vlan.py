@@ -39,6 +39,8 @@ def vlan_test(vlan_list):
             cfg.set('vlan', 'vlans', vlan_list)
             cfg.add_section('driver simple_vlan')
             cfg.set('driver simple_vlan', 'switch', '{"switch":"null"}')
+            cfg.add_section('devel')
+            cfg.set('devel', 'dry_run', 'True')
 
         @wraps(f)
         @clear_configuration
@@ -52,29 +54,19 @@ def vlan_test(vlan_list):
 
     return dec
 
-class TestApply:
-    """Tests network_apply"""
+class TestSimpleVLAN:
+    """Tests basic operation of Simple VLAN driver"""
 
     @vlan_test('84')
-    def test_network_apply_simple(self, db):
-        api.group_create('acme-code')
-        api.project_create('anvil-nextgen', 'acme-code')
-        api.network_create('hammernet', 'anvil-nextgen')
-        api.project_apply('anvil-nextgen')
-
-    @vlan_test('84')
-    def test_network_apply_complex(self, db):
-        api.group_create('acme-code')
-        api.project_create('anvil-nextgen', 'acme-code')
-        api.network_create('hammernet', 'anvil-nextgen')
-        api.switch_register('sw01', 'simple_vlan')
+    def test_simple_vlan_network_operations(self, db):
+        api.project_create('anvil-nextgen')
+        network_create_simple('hammernet', 'anvil-nextgen')
         for k in range(97,100):
             nodename = 'node-' + str(k)
             api.node_register(nodename, 'ipmihost', 'root', 'tapeworm')
             api.node_register_nic(nodename, 'eth0', 'DE:AD:BE:EF:20:14')
             api.project_connect_node('anvil-nextgen', nodename)
-            api.port_register('sw01', nodename)
-            api.port_connect_nic('sw01', nodename, nodename, 'eth0')
+            api.port_register(nodename)
+            api.port_connect_nic(nodename, nodename, 'eth0')
         api.project_detach_node('anvil-nextgen', 'node-97')
         api.node_connect_network('node-98', 'eth0', 'hammernet')
-        api.project_apply('anvil-nextgen')
