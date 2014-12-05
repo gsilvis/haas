@@ -16,7 +16,7 @@
 
 from functools import wraps
 
-from haas import model, api
+from haas import model, api, deferred
 from haas.test_common import *
 import pytest
 
@@ -70,3 +70,4 @@ class TestSimpleVLAN:
             api.port_connect_nic(nodename, nodename, 'eth0')
         api.project_detach_node('anvil-nextgen', 'node-97')
         api.node_connect_network('node-98', 'eth0', 'hammernet')
+        deferred.apply_networking()
