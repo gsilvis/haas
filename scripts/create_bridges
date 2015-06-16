@@ -21,16 +21,24 @@ from haas.drivers.driver_tools.vlan import get_vlan_list
 
 config.load()
 
+def ip_link(args):
+    return call(['ip', 'link'] + args)
+
 def create_bridge(vlan_no):
     vlan_no = str(vlan_no)
     trunk_nic = cfg.get('headnode', 'trunk_nic')
     bridge = 'br-vlan%s' % vlan_no
     vlan_nic = '%s.%s' % (trunk_nic, vlan_no)
-    call(['brctl', 'addbr', bridge])
-    call(['vconfig', 'add', trunk_nic, vlan_no])
-    call(['brctl', 'addif', bridge, vlan_nic])
-    call(['ifconfig', bridge, 'up', 'promisc'])
-    call(['ifconfig', vlan_nic, 'up', 'promisc'])
+    ip_link(['add', 'type', 'bridge', 'name', bridge])
+    ip_link(['set', 'promisc', 'on', 'dev', bridge])
+    ip_link(['set', 'up', 'dev', bridge])
+    ip_link(['add', 'type', 'vlan',
+             'link', trunk_nic,
+             'name', vlan_nic,
+             'id', vlan_no])
+    ip_link(['set', 'promisc', 'on', 'dev', vlan_nic])
+    ip_link(['set', 'up', 'dev', vlan_nic])
+    ip_link(['set', 'dev', vlan_nic, 'master', bridge])
 
 for vlan in get_vlan_list():
     create_bridge(vlan)
